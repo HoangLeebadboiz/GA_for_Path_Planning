@@ -59,14 +59,14 @@ project_folder/
 ```bash
 git clone <repository-url>
 cd <project-folder>
-```;
+```
 
 2. Download the JSON library:
 
 ```bash
 mkdir -p include
 curl -o include/json.hpp https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp
-```;
+```
 
 3. Compile the program:
 
@@ -82,7 +82,7 @@ g++ GA.cpp -o GA -std=c++11
 {
     "cost": 123.45
 }
-```;
+```
 
 File naming convention: `{FromLocation}To{ToLocation}.json`
 
@@ -90,14 +90,14 @@ File naming convention: `{FromLocation}To{ToLocation}.json`
 
 ```bash
 ./GA.exe
-```;
+```
 
 3. Modify the main function in GA.cpp to change start location and destinations:
 
 ```cpp
 std::string startLocation = "Bread";
 std::vector<std::string> destinations = {"Gas", "Fruit", "Salt", "Oil"};
-```;
+```
 
 4. Configure GA parameters (optional):
 
