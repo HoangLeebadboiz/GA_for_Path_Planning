@@ -36,41 +36,40 @@ public:
         std::srand(std::time(nullptr));
     }
 
-    void loadCostData() {
-        std::vector<std::string> files = {
-            "AStarResult/FruitToGas.json",
-            "AStarResult/BreadToSalt.json",
-            "AStarResult/BreadToOil.json",
-            "AStarResult/BreadToGas.json",
-            "AStarResult/BreadToFruit.json"
-        };
-
-        for (const auto& file : files) {
-            std::ifstream f(file);
-            json data = json::parse(f);
-            
-            // Extract locations from filename
-            std::string filename = file.substr(file.find_last_of("/") + 1);
-            std::string from = filename.substr(0, filename.find("To"));
-            std::string to = filename.substr(filename.find("To") + 2, filename.find(".json") - filename.find("To") - 2);
-            
-            // Store cost
-            costMap[{from, to}] = data["cost"];
-            costMap[{to, from}] = data["cost"]; // Assuming symmetric costs
-            
-            // Add locations to the set if not already present
-            if (std::find(locationNames.begin(), locationNames.end(), from) == locationNames.end()) {
-                locationNames.push_back(from);
-            }
-            if (std::find(locationNames.begin(), locationNames.end(), to) == locationNames.end()) {
-                locationNames.push_back(to);
-            }
-        }
-
+    void loadCostData(const std::string& start, const std::vector<std::string>& destinations) {
+        locationNames.clear();
+        costMap.clear();
+        locationToIndex.clear();
+        indexToLocation.clear();
+        
+        // Add start location and destinations to locationNames
+        locationNames.push_back(start);
+        locationNames.insert(locationNames.end(), destinations.begin(), destinations.end());
+        
         // Create index mappings
         for (size_t i = 0; i < locationNames.size(); ++i) {
             locationToIndex[locationNames[i]] = i;
             indexToLocation[i] = locationNames[i];
+        }
+        
+        // Load costs between all pairs of locations
+        for (size_t i = 0; i < locationNames.size(); i++) {
+            for (size_t j = i + 1; j < locationNames.size(); j++) {
+                const std::string& from = locationNames[i];
+                const std::string& to = locationNames[j];
+                
+                double cost = getCostFromJson(from, to);
+                costMap[{from, to}] = cost;
+                costMap[{to, from}] = cost; // Assuming symmetric costs
+            }
+        }
+        
+        // Print loaded costs for verification
+        std::cout << "Loaded costs:\n";
+        for (const auto& cost : costMap) {
+            std::cout << cost.first.first << " -> " 
+                     << cost.first.second << ": " 
+                     << cost.second << "\n";
         }
     }
 
@@ -214,21 +213,40 @@ private:
         
         return best;
     }
+
+    double getCostFromJson(const std::string& from, const std::string& to) {
+        std::string filename = "AStarResult/" + from + "To" + to + ".json";
+        std::string altFilename = "AStarResult/" + to + "To" + from + ".json";
+        
+        std::ifstream f(filename);
+        if (f.good()) {
+            json data = json::parse(f);
+            return data["cost"];
+        }
+        
+        std::ifstream altF(altFilename);
+        if (altF.good()) {
+            json data = json::parse(altF);
+            return data["cost"];
+        }
+        
+        return 999999; // Return large cost if path not found
+    }
 };
 
 // Example usage
 int main() {
     PathPlanningGA ga;
-    ga.loadCostData();
-
+    
     // Example: Start from "Bread" and visit other locations
     std::string startLocation = "Bread";
-    std::vector<std::string> destinations = {"Gas", "Fruit", "Salt", "Oil"};
+    std::vector<std::string> destinations = {"Gas", "Fruit", "Salt", "Oil", "Sugar"};
 
+    ga.loadCostData(startLocation, destinations);
     ga.initializePopulation(startLocation, destinations);
     std::vector<std::string> optimalPath = ga.optimize();
 
-    std::cout << "Optimal path from " << startLocation << ":\n";
+    std::cout << "\nOptimal path from " << startLocation << ":\n";
     for (const auto& location : optimalPath) {
         std::cout << location << " -> ";
     }
