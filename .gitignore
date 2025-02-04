@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+
+# Include directories
+include/
+
+# Json files
+*.json
+AStarResult/
+ProductPose/
