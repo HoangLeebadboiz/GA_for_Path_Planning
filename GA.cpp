@@ -8,6 +8,7 @@
 #include <map>
 #include <ctime>
 
+
 using json = nlohmann::json;
 
 class PathPlanningGA {
@@ -25,6 +26,8 @@ private:
     std::map<std::pair<std::string, std::string>, double> costMap;
     std::vector<std::string> locationNames;
     std::string startLocation;
+    std::string endLocation;
+    bool hasEndLocation = false;
 
     // Convert location names to indices for easier manipulation
     std::map<std::string, int> locationToIndex;
@@ -97,7 +100,7 @@ public:
         double totalCost = 0.0;
         std::string currentLoc = startLocation;
 
-        // Calculate total path cost
+        // Calculate path through destinations
         for (int index : chromosome) {
             std::string nextLoc = indexToLocation[index];
             auto costPair = std::make_pair(currentLoc, nextLoc);
@@ -105,13 +108,23 @@ public:
             if (costMap.find(costPair) != costMap.end()) {
                 totalCost += costMap[costPair];
             } else {
-                totalCost += 999999; // Large penalty for invalid paths
+                totalCost += 999999;
             }
             
             currentLoc = nextLoc;
         }
 
-        return 1.0 / (totalCost + 1.0); // Convert cost to fitness (higher is better)
+        // Add cost to end location if specified
+        if (hasEndLocation) {
+            auto finalCostPair = std::make_pair(currentLoc, endLocation);
+            if (costMap.find(finalCostPair) != costMap.end()) {
+                totalCost += costMap[finalCostPair];
+            } else {
+                totalCost += 999999;
+            }
+        }
+
+        return 1.0 / (totalCost + 1.0);
     }
 
     std::vector<int> crossover(const std::vector<int>& parent1, const std::vector<int>& parent2) {
@@ -197,7 +210,17 @@ public:
             optimalPath.push_back(indexToLocation[index]);
         }
 
+        // Add end location to path if specified
+        if (hasEndLocation) {
+            optimalPath.push_back(endLocation);
+        }
+
         return optimalPath;
+    }
+
+    void setEndPosition(const std::string& end) {
+        endLocation = end;
+        hasEndLocation = true;
     }
 
 private:
@@ -238,15 +261,20 @@ private:
 int main() {
     PathPlanningGA ga;
     
-    // Example: Start from "Bread" and visit other locations
+    // Set start location and destinations
     std::string startLocation = "Bread";
-    std::vector<std::string> destinations = {"Gas", "Fruit", "Salt", "Oil", "Sugar"};
+    std::vector<std::string> destinations = {"Gas", "Fruit", "Salt"};
+    
+    // Set end location (optional)
+    ga.setEndPosition("Oil");
 
+    // Run GA
     ga.loadCostData(startLocation, destinations);
     ga.initializePopulation(startLocation, destinations);
     std::vector<std::string> optimalPath = ga.optimize();
 
-    std::cout << "\nOptimal path from " << startLocation << ":\n";
+    // Print results
+    std::cout << "\nOptimal path from " << startLocation << " to Oil:\n";
     for (const auto& location : optimalPath) {
         std::cout << location << " -> ";
     }
