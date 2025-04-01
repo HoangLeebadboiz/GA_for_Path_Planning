@@ -35,9 +35,10 @@ private:
     std::vector<Good> centroids; // Cluster centroids
     std::vector<int> assignments; // Cluster assignments for each good
     double inertia; // Sum of squared distances to nearest centroid
+    double maxRadius; // Maximum allowed radius for each cluster
     
 public:
-    KMeans(int k) : k(k), inertia(0.0) {}
+    KMeans(int k, double radius = std::numeric_limits<double>::max()) : k(k), inertia(0.0), maxRadius(radius) {}
     
     // Add a good to the dataset
     void addGood(const Good& g) {
@@ -113,7 +114,13 @@ public:
                 }
             }
             
-            new_inertia += minDist * minDist;
+            // Add penalty if distance exceeds maxRadius
+            if (minDist > maxRadius) {
+                new_inertia += std::numeric_limits<double>::max(); // Large penalty
+            } else {
+                new_inertia += minDist * minDist;
+            }
+            
             newAssignments[i] = closestCentroid;
             if (assignments.empty() || newAssignments[i] != assignments[i]) {
                 changed = true;
@@ -253,12 +260,12 @@ std::vector<Good> readGoodsFromFiles(const std::string& folderPath) {
 }
 
 // Function to find optimal k using elbow method
-int findOptimalK(const std::vector<Good>& goods, int maxK = 10) {
+int findOptimalK(const std::vector<Good>& goods, double maxRadius = std::numeric_limits<double>::max(), int maxK = 10) {
     std::vector<double> inertias;
     
     // Try different values of k
     for (int k = 1; k <= maxK; ++k) {
-        KMeans kmeans(k);
+        KMeans kmeans(k, maxRadius);
         for (const auto& good : goods) {
             kmeans.addGood(good);
         }
@@ -583,13 +590,14 @@ int main() {
     }
     std::cout << "\n\n";
     
-    // 3. Find optimal number of clusters
-    int optimalK = findOptimalK(goods);
+    // 3. Find optimal number of clusters with radius limit
+    double maxClusterRadius = 5.0; // Set your desired maximum cluster radius
+    int optimalK = findOptimalK(goods, maxClusterRadius);
     // int optimalK = 3; // For testing, set a fixed number of clusters    
     std::cout << "Optimal number of clusters: " << optimalK << std::endl;
     
-    // 4. Run K-means clustering
-    KMeans kmeans(optimalK);
+    // 4. Run K-means clustering without radius limit
+    KMeans kmeans(optimalK);  // No radius limit for fixed k
     for (const auto& good : goods) {
         kmeans.addGood(good);
     }
