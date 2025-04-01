@@ -7,8 +7,278 @@
 #include "include/json.hpp"
 #include <map>
 #include <ctime>
+#include <cmath>
+#include <filesystem>
+#include <iomanip>
+#include <limits>
+
 
 using json = nlohmann::json;
+namespace fs = std::filesystem;
+
+// Structure to represent a good in the supermarket
+struct Good {
+    double x, y;
+    std::string name;
+    Good(double x = 0, double y = 0, const std::string& name = "") : x(x), y(y), name(name) {}
+};
+
+// Calculate Euclidean distance between two points
+double distance(const Good& p1, const Good& p2) {
+    return std::sqrt(std::pow(p1.x - p2.x, 2) + std::pow(p1.y - p2.y, 2));
+}
+
+class KMeans {
+private:
+    int k; // Number of clusters
+    std::vector<Good> goods; // Input goods
+    std::vector<Good> centroids; // Cluster centroids
+    std::vector<int> assignments; // Cluster assignments for each good
+    double inertia; // Sum of squared distances to nearest centroid
+    
+public:
+    KMeans(int k) : k(k), inertia(0.0) {}
+    
+    // Add a good to the dataset
+    void addGood(const Good& g) {
+        goods.push_back(g);
+    }
+    
+    // Get centroid at specified index
+    Good getCentroid(int index) const {
+        if (index >= 0 && index < k) {
+            return centroids[index];
+        }
+        return Good();
+    }
+    
+    // K-means++ initialization
+    void initializeCentroidsPlusPlus() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        // Choose first centroid randomly
+        std::uniform_int_distribution<> dis(0, goods.size() - 1);
+        centroids.clear();
+        centroids.push_back(goods[dis(gen)]);
+
+        // Choose remaining centroids
+        for (int i = 1; i < k; i++) {
+            std::vector<double> distances(goods.size());
+            double sum = 0.0;
+
+            // Calculate distances to nearest existing centroid
+            for (size_t j = 0; j < goods.size(); j++) {
+                double minDist = std::numeric_limits<double>::max();
+                for (const auto& centroid : centroids) {
+                    minDist = std::min(minDist, distance(goods[j], centroid));
+                }
+                distances[j] = minDist * minDist;
+                sum += distances[j];
+            }
+
+            // Choose next centroid with probability proportional to D²
+            std::uniform_real_distribution<> dis_prob(0.0, sum);
+            double rand_val = dis_prob(gen);
+            double cumsum = 0.0;
+            size_t chosen_idx = 0;
+
+            for (size_t j = 0; j < goods.size(); j++) {
+                cumsum += distances[j];
+                if (cumsum >= rand_val) {
+                    chosen_idx = j;
+                    break;
+                }
+            }
+
+            centroids.push_back(goods[chosen_idx]);
+        }
+    }
+    
+    // Assign goods to nearest centroid
+    bool assignClusters() {
+        bool changed = false;
+        std::vector<int> newAssignments(goods.size());
+        double new_inertia = 0.0;
+        
+        for (size_t i = 0; i < goods.size(); ++i) {
+            double minDist = std::numeric_limits<double>::max();
+            int closestCentroid = 0;
+            
+            for (int j = 0; j < k; ++j) {
+                double dist = distance(goods[i], centroids[j]);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestCentroid = j;
+                }
+            }
+            
+            new_inertia += minDist * minDist;
+            newAssignments[i] = closestCentroid;
+            if (assignments.empty() || newAssignments[i] != assignments[i]) {
+                changed = true;
+            }
+        }
+        
+        assignments = newAssignments;
+        inertia = new_inertia;
+        return changed;
+    }
+    
+    // Update centroid positions
+    void updateCentroids() {
+        std::vector<Good> newCentroids(k, Good(0, 0));
+        std::vector<int> counts(k, 0);
+        
+        for (size_t i = 0; i < goods.size(); ++i) {
+            int cluster = assignments[i];
+            newCentroids[cluster].x += goods[i].x;
+            newCentroids[cluster].y += goods[i].y;
+            counts[cluster]++;
+        }
+        
+        for (int i = 0; i < k; ++i) {
+            if (counts[i] > 0) {
+                newCentroids[i].x /= counts[i];
+                newCentroids[i].y /= counts[i];
+                newCentroids[i].name = "centroid" + std::to_string(i);
+            }
+        }
+        
+        centroids = newCentroids;
+    }
+    
+    double getInertia() const {
+        return inertia;
+    }
+    
+    // Run k-means clustering
+    void run(int maxIterations = 100) {
+        if (goods.empty() || k <= 0) return;
+        
+        initializeCentroidsPlusPlus();
+        
+        for (int iter = 0; iter < maxIterations; ++iter) {
+            bool changed = assignClusters();
+            if (!changed) break;
+            updateCentroids();
+        }
+    }
+    
+    // Get clustering results as array of arrays with good names
+    void printClusterResults() {
+        std::vector<std::vector<std::string>> clusters(k);
+        for (size_t i = 0; i < goods.size(); ++i) {
+            clusters[assignments[i]].push_back(goods[i].name);
+        }
+        
+        std::cout << "\nClustering Results:\n";
+        std::cout << "==================\n";
+        for (size_t i = 0; i < clusters.size(); ++i) {
+            std::cout << "Cluster " << i + 1 << ": ";
+            for (size_t j = 0; j < clusters[i].size(); ++j) {
+                std::cout << clusters[i][j];
+                if (j < clusters[i].size() - 1) std::cout << ", ";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << "Inertia: " << inertia << std::endl;
+        std::cout << "==================\n";
+    }
+};
+
+// Function to read goods data from JSON files
+std::vector<Good> readGoodsFromFiles(const std::string& folderPath) {
+    std::vector<Good> goods;
+    
+    // Check if directory exists, if not create it
+    if (!fs::exists(folderPath)) {
+        std::cout << "Creating directory: " << folderPath << std::endl;
+        fs::create_directory(folderPath);
+        
+        // Create sample data
+        std::vector<std::pair<std::string, std::pair<double, double>>> samples = {
+            {"Water", {1.0, 2.0}},
+            {"Bread", {1.5, 2.5}},
+            {"Chips", {10.0, 12.0}},
+            {"Soda", {9.5, 11.5}},
+            {"Candy", {5.0, 5.0}}
+        };
+        
+        for (const auto& sample : samples) {
+            json j;
+            j["positon"] = {sample.second.first, sample.second.second, 0.0};
+            j["orientation"] = {0.0, 0.0, 0.0, 1.0};
+            
+            std::string filename = folderPath + "/" + sample.first + ".json";
+            std::ofstream file(filename);
+            file << std::setw(4) << j << std::endl;
+        }
+        
+        std::cout << "Created sample data files in " << folderPath << std::endl;
+    }
+    
+    try {
+        for (const auto& entry : fs::directory_iterator(folderPath)) {
+            if (entry.path().extension() == ".json") {
+                std::ifstream file(entry.path());
+                if (file.is_open()) {
+                    json j;
+                    file >> j;
+                    
+                    if (j.contains("positon") && j["positon"].is_array() && j["positon"].size() >= 2) {
+                        double x = j["positon"][0];
+                        double y = j["positon"][1];
+                        std::string name = entry.path().stem().string();
+                        goods.emplace_back(x, y, name);
+                    }
+                }
+            }
+        }
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Error accessing directory: " << e.what() << std::endl;
+        return goods;
+    }
+    
+    return goods;
+}
+
+// Function to find optimal k using elbow method
+int findOptimalK(const std::vector<Good>& goods, int maxK = 10) {
+    std::vector<double> inertias;
+    
+    // Try different values of k
+    for (int k = 1; k <= maxK; ++k) {
+        KMeans kmeans(k);
+        for (const auto& good : goods) {
+            kmeans.addGood(good);
+        }
+        kmeans.run();
+        inertias.push_back(kmeans.getInertia());
+    }
+    
+    // Find the elbow point using the maximum curvature
+    int optimalK = 1;
+    double maxCurvature = 0.0;
+    
+    for (int i = 1; i < maxK - 1; ++i) {
+        double curvature = std::abs(inertias[i-1] - 2*inertias[i] + inertias[i+1]);
+        if (curvature > maxCurvature) {
+            maxCurvature = curvature;
+            optimalK = i + 1;
+        }
+    }
+    
+    // Print elbow curve
+    std::cout << "\nElbow Curve:\n";
+    std::cout << "============\n";
+    for (int i = 0; i < maxK; ++i) {
+        std::cout << "K=" << i+1 << ": Inertia=" << inertias[i] << std::endl;
+    }
+    std::cout << "============\n";
+    
+    return optimalK;
+}
 
 class PathPlanningGA {
 private:
@@ -25,6 +295,8 @@ private:
     std::map<std::pair<std::string, std::string>, double> costMap;
     std::vector<std::string> locationNames;
     std::string startLocation;
+    std::string endLocation;
+    bool hasEndLocation = false;
 
     // Convert location names to indices for easier manipulation
     std::map<std::string, int> locationToIndex;
@@ -97,7 +369,7 @@ public:
         double totalCost = 0.0;
         std::string currentLoc = startLocation;
 
-        // Calculate total path cost
+        // Calculate path through destinations
         for (int index : chromosome) {
             std::string nextLoc = indexToLocation[index];
             auto costPair = std::make_pair(currentLoc, nextLoc);
@@ -105,13 +377,23 @@ public:
             if (costMap.find(costPair) != costMap.end()) {
                 totalCost += costMap[costPair];
             } else {
-                totalCost += 999999; // Large penalty for invalid paths
+                totalCost += 999999;
             }
             
             currentLoc = nextLoc;
         }
 
-        return 1.0 / (totalCost + 1.0); // Convert cost to fitness (higher is better)
+        // Add cost to end location if specified
+        if (hasEndLocation) {
+            auto finalCostPair = std::make_pair(currentLoc, endLocation);
+            if (costMap.find(finalCostPair) != costMap.end()) {
+                totalCost += costMap[finalCostPair];
+            } else {
+                totalCost += 999999;
+            }
+        }
+
+        return 1.0 / (totalCost + 1.0);
     }
 
     std::vector<int> crossover(const std::vector<int>& parent1, const std::vector<int>& parent2) {
@@ -197,7 +479,17 @@ public:
             optimalPath.push_back(indexToLocation[index]);
         }
 
+        // Add end location to path if specified
+        if (hasEndLocation) {
+            optimalPath.push_back(endLocation);
+        }
+
         return optimalPath;
+    }
+
+    void setEndPosition(const std::string& end) {
+        endLocation = end;
+        hasEndLocation = true;
     }
 
 private:
@@ -234,23 +526,112 @@ private:
     }
 };
 
+// Function to select goods by name
+std::vector<Good> selectGoods(const std::vector<Good>& allGoods, const std::vector<std::string>& selectedNames) {
+    std::vector<Good> selectedGoods;
+    for (const auto& name : selectedNames) {
+        auto it = std::find_if(allGoods.begin(), allGoods.end(),
+            [&name](const Good& g) { return g.name == name; });
+        if (it != allGoods.end()) {
+            selectedGoods.push_back(*it);
+        }
+    }
+    return selectedGoods;
+}
+
 // Example usage
 int main() {
+    // 1. Read goods from Pose folder
+    std::vector<Good> allGoods = readGoodsFromFiles("Pose");
+    
+    // Print available goods
+    std::cout << "\nAvailable goods:\n";
+    for (const auto& good : allGoods) {
+        std::cout << good.name << " ";
+    }
+    std::cout << "\n\n";
+    
+    // 2. Select goods to include in clustering
+    std::vector<std::string> selectedGoods = {
+        "Bread", "Fruit", "Gas", "Salt", "Snack", "SoftDrink", "Sugar"
+    };
+    
+    // Specify start and end locations
+    std::string startLocation = "Start";  // Start location
+    std::string endLocation = "CheckoutCounter";      // End location
+    
+    // Get selected goods (excluding start and end locations)
+    std::vector<Good> goods = selectGoods(allGoods, selectedGoods);
+    
+    if (goods.empty()) {
+        std::cerr << "No valid goods selected. Exiting.\n";
+        return 1;
+    }
+    
+    std::cout << "\nSelected goods for clustering:\n";
+    for (const auto& good : goods) {
+        std::cout << good.name << " ";
+    }
+    std::cout << "\n\n";
+    
+    // 3. Find optimal number of clusters
+    // int optimalK = findOptimalK(goods);
+    int optimalK = 3; // For testing, set a fixed number of clusters    
+    std::cout << "Optimal number of clusters: " << optimalK << std::endl;
+    
+    // 4. Run K-means clustering
+    KMeans kmeans(optimalK);
+    for (const auto& good : goods) {
+        kmeans.addGood(good);
+    }
+    kmeans.run();
+    kmeans.printClusterResults();
+    
+    // 5. Get cluster centers and nearest goods
+    std::vector<std::string> clusterCenters;
+    for (int i = 0; i < optimalK; i++) {
+        Good center = kmeans.getCentroid(i);
+        // Find nearest good to this center
+        double minDist = std::numeric_limits<double>::max();
+        std::string nearestGood;
+        
+        for (const auto& good : goods) {
+            double dist = distance(center, good);
+            if (dist < minDist) {
+                minDist = dist;
+                nearestGood = good.name;
+            }
+        }
+        clusterCenters.push_back(nearestGood);
+    }
+    
+    // 6. Run GA with start location, cluster centers, and end location
     PathPlanningGA ga;
     
-    // Example: Start from "Bread" and visit other locations
-    std::string startLocation = "Bread";
-    std::vector<std::string> destinations = {"Gas", "Fruit", "Salt", "Oil", "Sugar"};
-
+    // Use cluster centers as intermediate destinations
+    std::vector<std::string> destinations = clusterCenters;
+    
+    // Run GA with specified start and end
     ga.loadCostData(startLocation, destinations);
     ga.initializePopulation(startLocation, destinations);
+    ga.setEndPosition(endLocation);  // Set the end location
     std::vector<std::string> optimalPath = ga.optimize();
 
-    std::cout << "\nOptimal path from " << startLocation << ":\n";
+    // Print results
+    std::cout << "\nPath Planning Details:\n";
+    std::cout << "Start Location: " << startLocation << std::endl;
+    std::cout << "End Location: " << endLocation << std::endl;
+    std::cout << "\nCluster Centers (intermediate destinations):\n";
+    for (const auto& center : clusterCenters) {
+        std::cout << center << std::endl;
+    }
+    
+    std::cout << "\nOptimal path:\n";
+    std::cout << startLocation << " -> ";
     for (const auto& location : optimalPath) {
         std::cout << location << " -> ";
     }
-    std::cout << "End\n";
+    // std::cout << endLocation << "\n";
 
     return 0;
 }
