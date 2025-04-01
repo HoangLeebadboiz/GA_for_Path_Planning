@@ -185,6 +185,15 @@ public:
         std::cout << "Inertia: " << inertia << std::endl;
         std::cout << "==================\n";
     }
+
+    // Get all goods in each cluster
+    std::vector<std::vector<std::string>> getClusterContents() const {
+        std::vector<std::vector<std::string>> clusters(k);
+        for (size_t i = 0; i < goods.size(); ++i) {
+            clusters[assignments[i]].push_back(goods[i].name);
+        }
+        return clusters;
+    }
 };
 
 // Function to read goods data from JSON files
@@ -542,7 +551,7 @@ std::vector<Good> selectGoods(const std::vector<Good>& allGoods, const std::vect
 // Example usage
 int main() {
     // 1. Read goods from Pose folder
-    std::vector<Good> allGoods = readGoodsFromFiles("Pose");
+    std::vector<Good> allGoods = readGoodsFromFiles("ProductPoseReal");
     
     // Print available goods
     std::cout << "\nAvailable goods:\n";
@@ -553,7 +562,7 @@ int main() {
     
     // 2. Select goods to include in clustering
     std::vector<std::string> selectedGoods = {
-        "Bread", "Fruit", "Gas", "Salt", "Snack", "SoftDrink", "Sugar"
+        "Bread", "Cooker", "Fruit", "Gas", "MicrowaveOven", "Oil", "Refrigerator", "Salt", "Snack", "SoftDrink", "Sugar", "Television", "Water"
     };
     
     // Specify start and end locations
@@ -575,8 +584,8 @@ int main() {
     std::cout << "\n\n";
     
     // 3. Find optimal number of clusters
-    // int optimalK = findOptimalK(goods);
-    int optimalK = 3; // For testing, set a fixed number of clusters    
+    int optimalK = findOptimalK(goods);
+    // int optimalK = 3; // For testing, set a fixed number of clusters    
     std::cout << "Optimal number of clusters: " << optimalK << std::endl;
     
     // 4. Run K-means clustering
@@ -587,8 +596,10 @@ int main() {
     kmeans.run();
     kmeans.printClusterResults();
     
-    // 5. Get cluster centers and nearest goods
+    // 5. Get cluster centers and cluster contents
     std::vector<std::string> clusterCenters;
+    std::vector<std::vector<std::string>> clusterContents = kmeans.getClusterContents();
+    
     for (int i = 0; i < optimalK; i++) {
         Good center = kmeans.getCentroid(i);
         // Find nearest good to this center
@@ -614,24 +625,50 @@ int main() {
     // Run GA with specified start and end
     ga.loadCostData(startLocation, destinations);
     ga.initializePopulation(startLocation, destinations);
-    ga.setEndPosition(endLocation);  // Set the end location
+    ga.setEndPosition(endLocation);
     std::vector<std::string> optimalPath = ga.optimize();
 
-    // Print results
-    std::cout << "\nPath Planning Details:\n";
-    std::cout << "Start Location: " << startLocation << std::endl;
-    std::cout << "End Location: " << endLocation << std::endl;
-    std::cout << "\nCluster Centers (intermediate destinations):\n";
-    for (const auto& center : clusterCenters) {
-        std::cout << center << std::endl;
-    }
+    // Create 1D array of goods arranged by clusters
+    std::vector<std::string> arrangedGoods;
     
-    std::cout << "\nOptimal path:\n";
+    // Map to track which cluster each good belongs to
+    std::map<std::string, int> goodToCluster;
+    for (size_t i = 0; i < optimalPath.size(); i++) {
+        const std::string& center = optimalPath[i];
+        // Find cluster index for this center
+        for (size_t j = 0; j < clusterCenters.size(); j++) {
+            if (clusterCenters[j] == center) {
+                // Add all goods from this cluster
+                std::vector<std::string> clusterGoods = clusterContents[j];
+                // Randomly shuffle goods within cluster
+                std::random_shuffle(clusterGoods.begin(), clusterGoods.end());
+                // Add to arranged goods
+                arrangedGoods.insert(arrangedGoods.end(), clusterGoods.begin(), clusterGoods.end());
+                break;
+            }
+        }
+    }
+
+    // Print results
+    std::cout << "\nPath Planning Results:\n";
+    std::cout << "=====================\n";
+    std::cout << "1. Optimal Path:\n";
     std::cout << startLocation << " -> ";
     for (const auto& location : optimalPath) {
         std::cout << location << " -> ";
     }
-    // std::cout << endLocation << "\n";
+    std::cout << endLocation << "\n\n";
+
+    std::cout << "2. Arranged Goods (by cluster order):\n";
+    std::cout << "[ ";
+    for (size_t i = 0; i < arrangedGoods.size(); i++) {
+        std::cout << arrangedGoods[i];
+        if (i < arrangedGoods.size() - 1) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << " ]\n";
+    std::cout << "=====================\n";
 
     return 0;
 }
